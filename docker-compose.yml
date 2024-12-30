@@ -1,0 +1,29 @@
+services:
+  pdf-service:
+    image: pdf-fugger-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - FLASK_ENV=development
+      - FLASK_APP=app.py
+    restart: unless-stopped
+
+  web:
+    image: pdf-fugger-frontend:latest
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:5001
+    depends_on:
+      - pdf-service
