@@ -46,7 +46,67 @@ class PDFProcessor:
         brightness = ImageEnhance.Brightness(less_sharp)
         dimmed = brightness.enhance(fade_level)
         
-        return dimmed
+        # Dikey siliklik efekti ekle
+        width, height = dimmed.size
+        img_array = np.array(dimmed)
+        
+        # Debug için çizim yapacak bir PIL Image oluştur
+        debug_image = Image.fromarray(img_array)
+        draw = ImageDraw.Draw(debug_image)
+        
+        # Görüntü genişliğine göre katlama aralığını ayarla
+        base_interval = width // 8  # Sayfayı yaklaşık 8 parçaya böl
+        fold_interval = base_interval + random.randint(-100, 100)  # Biraz rastgelelik ekle
+        
+        # Katlama pozisyonlarını hesapla
+        fold_positions = []
+        current_pos = fold_interval
+        while current_pos < width:
+            fold_positions.append(current_pos)
+            current_pos += fold_interval + random.randint(-100, 100)
+        
+        for x in fold_positions:
+            fold_width = random.randint(50, 60)
+            start = max(0, x - fold_width // 2)
+            end = min(width, x + fold_width // 2)
+            
+            # Debug için çerçeve çiz
+            draw.rectangle([(start, 0), (end, height-1)], outline='red', width=5)
+            
+            # Tüm bölgeyi beyazlaştır (silikleştir)
+            if len(img_array.shape) == 3:  # RGB görüntü için
+                img_array[:, start:end, :] = img_array[:, start:end, :] * 0.3 + 255 * 0.7
+            else:  # Gri tonlamalı görüntü için
+                img_array[:, start:end] = img_array[:, start:end] * 0.3 + 255 * 0.7
+            
+            # Kenarları yumuşat
+            blend_width = 2  # Yumuşatma genişliği
+            
+            # Sol kenar yumuşatma
+            for i in range(blend_width):
+                blend_factor = i / blend_width
+                pos = start + i
+                if pos < width:
+                    if len(img_array.shape) == 3:
+                        img_array[:, pos, :] = img_array[:, pos, :] * blend_factor + \
+                                             (img_array[:, pos, :] * 0.3 + 255 * 0.7) * (1 - blend_factor)
+                    else:
+                        img_array[:, pos] = img_array[:, pos] * blend_factor + \
+                                          (img_array[:, pos] * 0.3 + 255 * 0.7) * (1 - blend_factor)
+            
+            # Sağ kenar yumuşatma
+            for i in range(blend_width):
+                blend_factor = i / blend_width
+                pos = end - i
+                if pos >= 0:
+                    if len(img_array.shape) == 3:
+                        img_array[:, pos, :] = img_array[:, pos, :] * blend_factor + \
+                                             (img_array[:, pos, :] * 0.3 + 255 * 0.7) * (1 - blend_factor)
+                    else:
+                        img_array[:, pos] = img_array[:, pos] * blend_factor + \
+                                          (img_array[:, pos] * 0.3 + 255 * 0.7) * (1 - blend_factor)
+        
+        return Image.fromarray(img_array.astype(np.uint8))
 
     def add_paper_texture(self, image):
         """Kağıt dokusu ve kırışıklık efekti ekler"""
@@ -79,7 +139,6 @@ class PDFProcessor:
             # PDF'i görüntülere dönüştür
             images = pdf2image.convert_from_path(
                 temp_input_path,
-                dpi=150,  # DPI'yi düşür
                 thread_count=2,  # İş parçacığı sayısını sınırla
                 grayscale=True,  # Direkt gri tonlama yap
                 use_pdftocairo=True  # Daha hızlı dönüşüm için pdftocairo kullan
@@ -92,14 +151,6 @@ class PDFProcessor:
             processed_images = []
             for img in images:
                 try:
-                    # Çok büyük görüntüler için boyut sınırlaması
-                    width, height = img.size
-                    if width * height > 25000000:  # 25 megapiksel üzeri görüntüler için
-                        scale_factor = (25000000 / (width * height)) ** 0.5
-                        new_width = int(width * scale_factor)
-                        new_height = int(height * scale_factor)
-                        img = img.resize((new_width, new_height), Image.LANCZOS)
-                    
                     # Tarama efektlerini uygula
                     img = self.add_scan_effect(img, blur_radius, fade_level)
                     img = self.add_noise(img, ink_spots)
@@ -124,8 +175,7 @@ class PDFProcessor:
                     save_all=True,
                     append_images=processed_images[1:],
                     format='PDF',
-                    resolution=150.0,  # Çıktı çözünürlüğünü düşür
-                    optimize=True  # PDF boyutunu optimize et
+                    # optimize=True  # PDF boyutunu optimize et
                 )
             
             output_pdf_bytes.seek(0)
